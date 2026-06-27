@@ -2,21 +2,60 @@ import * as THREE from 'three';
 import {OrbitControls, Wireframe } from 'three/examples/jsm/Addons.js';
 import GUI from 'lil-gui';
 
-// EGO cursor
-// class ego {
-//   constructor(camera){
-//     this.camera = camera;
-//   }
+class Ego {
+  constructor(camera){
+    this.camera = camera;
+    this.mouse = new THREE.Vector2();
+    this.clicking = false;
+    this._bindInput();
 
+    // steering tuning
+    this.turnSpeed = 2; // how fast cursor steers
+    this.lookLambda = 5; // follow-smoothing rate => lower = less snappy
+    this.maxPitch = 1.2 // clamp in radians
+
+    // orientation states | angles (rad): yaw = x, pitch = y
+    this.targetYaw = this.targetPitch = 0; // instant follow
+    this.yaw = this.pitch = 0; // lagged camera follow
+    this.camera.rotation.order = 'YXZ';
+
+  }
+
+  update(delta){
+    // immediate ego target
+    this.targetYaw -= this.mouse.x * this.turnSpeed * delta;
+    this.targetPitch += this.mouse.y * this.turnSpeed * delta;
+    this.targetPitch = THREE.MathUtils.clamp(this.targetPitch, -this.maxPitch, this.maxPitch); // blocks y-roll
+
+    // camera lag
+    const k = 1 - Math.exp(-this.lookLambda * delta);
+    this.yaw = THREE.MathUtils.lerp(this.yaw, this.targetYaw, k);
+    this.pitch = THREE.MathUtils.lerp(this.pitch, this.targetPitch, k);
+
+    this.camera.rotation.y = this.yaw;
+    this.camera.rotation.x = this.pitch;
+
+  }
+
+  _bindInput(){
+    window.addEventListener('mousemove', (event) => {
+      this.mouse.x = ((event.clientX / window.innerWidth) * 2 - 1)
+      this.mouse.y = -((event.clientY / window.innerHeight) * 2 - 1)
+    })
+    window.addEventListener('mousedown', () => {this.clicking = true; });
+    window.addEventListener('mouseup', () => {this.clicking = false; });
+  }
 
 }
 
 // scene and camera
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const ego = new Ego(camera);
+ego._bindInput();
 
 camera.position.set(2, 2, 2);
-camera.lookAt(0,0,0);
+// camera.lookAt(0,0,0);
 
 const renderer = new THREE.WebGLRenderer()
 renderer.setSize(window.innerWidth, window.innerHeight); // (_, _, updateStyle: false)?
@@ -24,11 +63,8 @@ document.body.appendChild(renderer.domElement);
 
 const clock = new THREE.Clock();
 
-const mouse = new THREE.Vector2();
-window.addEventListener('mousemove', (event) => {
-  mouse.x = ((event.clientX / window.innerWidth) * 2 - 1)
-  mouse.y = -((event.clientY / window.innerHeight) * 2 - 1)
-})
+// const mouse = new THREE.Vector2();
+
 
 
 // GUI
@@ -106,7 +142,8 @@ function animate(time){
   // camera.position.y = mouse.y * 5
   // camera.position.z -= 0.005
 
-  const delta = clock.getDelta()
+  const delta = clock.getDelta(); // can change per frame to per second to standardize rates
+  ego.update(delta);
 
   renderer.render(scene, camera);
 }
